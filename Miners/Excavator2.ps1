@@ -30,7 +30,7 @@ $Algorithms | Get-Member -MemberType NoteProperty | Select -ExpandProperty Name 
     }
 
     [PSCustomObject]@{
-        Type = 'AMD','NVIDIA'
+        Type = 'NVIDIA',$ThreadIndex
         Path = $Path
         Arguments = -Join ('-p ', $Port, ' -c ', $_, $ThreadIndex, '.json')
         HashRates = [PSCustomObject]@{$_ = -Join ('$($Stats.', $Name, '_', $_, '_HashRate.Week)')}

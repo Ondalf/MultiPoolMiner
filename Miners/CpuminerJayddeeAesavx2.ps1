@@ -4,9 +4,9 @@ $Uri = 'https://github.com/JayDDee/cpuminer-opt/releases/download/v3.6.3/cpumine
 $Name = (Get-Item $script:MyInvocation.MyCommand.Path).BaseName
 
 $Algorithms = [PSCustomObject]@{
-    Lyra2z = 'lyra2z' #not supported
+    #Lyra2z = 'lyra2z' #not supported
     #Equihash = 'equihash' #not supported
-    Cryptonight = 'cryptonight'
+    #Cryptonight = 'cryptonight'
     #Ethash = 'ethash' #not supported
     #Sia = 'sia' #not supported
     #Yescrypt = 'yescrypt' #use TpruvoT
@@ -20,16 +20,18 @@ $Algorithms = [PSCustomObject]@{
     #Groestl = 'groestl' #use TpruvoT
     #Keccak = 'keccak' #use TpruvoT
     #Scrypt = 'scrypt' #use TpruvoT
+	#m7m = 'm7m'
+	#xevan = 'xevan'
 }
 
 $Algorithms | Get-Member -MemberType NoteProperty | Select -ExpandProperty Name | ForEach {
     [PSCustomObject]@{
         Type = 'CPU'
         Path = $Path
-        Arguments = -Join ('-a ', $Algorithms.$_, ' -o stratum+tcp://$($Pools.', $_, '.Host):$($Pools.', $_, '.Port) -u $($Pools.', $_, '.User) -p $($Pools.', $_, '.Pass)')
+        Arguments = -Join ('-b 127.0.0.1:4060 -a ', $Algorithms.$_, ' -o stratum+tcp://$($Pools.', $_, '.Host):$($Pools.', $_, '.Port) -u $($Pools.', $_, '.User) -p $($Pools.', $_, '.Pass)')
         HashRates = [PSCustomObject]@{$_ = -Join ('$($Stats.', $Name, '_', $_, '_HashRate.Week)')}
         API = 'Ccminer'
-        Port = 4048
+        Port = 4060
         Wrap = $false
         URI = $Uri
     }
