@@ -38,14 +38,14 @@ $Zpool_Request | Get-Member -MemberType NoteProperty | Select -ExpandProperty Na
         [PSCustomObject]@{
             Algorithm = $Zpool_Algorithm
             Info = $Zpool_Coin
-            Price = $Stat.Live
+            Price = $Stat.Minute_5
             StablePrice = $Stat.Week
             MarginOfError = $Stat.Fluctuation
             Protocol = "stratum+tcp"
             Host = $Zpool_Host
             Port = $Zpool_Port
             User = $Wallet
-            Pass = "$WorkerName,c=BTC,d=1"
+            Pass = "c=BTC,stats"
             Location = $Location
             SSL = $false
         }
