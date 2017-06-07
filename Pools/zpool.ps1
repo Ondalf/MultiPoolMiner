@@ -27,7 +27,7 @@ $Zpool_Request | Get-Member -MemberType NoteProperty | Select -ExpandProperty Na
     {
         "equihash"{$Divisor /= 1000}
         "blake2s"{$Divisor *= 1000}
-		"blakecoin"{$Divisor *= 1000}
+	"blakecoin"{$Divisor *= 1000}
         "decred"{$Divisor *= 1000}
     }
 
@@ -39,7 +39,7 @@ $Zpool_Request | Get-Member -MemberType NoteProperty | Select -ExpandProperty Na
         [PSCustomObject]@{
             Algorithm = $Zpool_Algorithm
             Info = $Zpool_Coin
-            Price = $Stat.Minute_5
+            Price = $Stat.Live
             StablePrice = $Stat.Week
             MarginOfError = $Stat.Fluctuation
             Protocol = "stratum+tcp"
