@@ -8,6 +8,7 @@ $Name = (Get-Item $script:MyInvocation.MyCommand.Path).BaseName
 $Algorithms = [PSCustomObject]@{
 	C11 = 'c11'
 	#Blake2s = 'blake2s'
+	Decred = 'decred'
 	Lyra2v2 = 'lyra2v2'
 	Lyra2RE2 = 'lyra2v2'
     Skein = 'skein'
@@ -18,11 +19,15 @@ $Algorithms = [PSCustomObject]@{
     Sib = 'sib'
 	Veltor = 'veltor'
 	MyriadGroestl = 'myr-gr'
+	MyrGr = 'myr-gr'
 	Keccak = 'keccak'
+	X11evo = 'x11evo'
+	Blakecoin = 'blakecoin'
 }
 
 $Optimizations = [PSCustomObject]@{
 	Blake2s = ''
+	Decred = ''
 	Lyra2v2 = ''
     Skein = ''
     NeoScrypt = ''
@@ -32,7 +37,10 @@ $Optimizations = [PSCustomObject]@{
     Sib = ''
 	Veltor = ''
 	MyriadGroestl = ''
+	MyrGr = ''
 	Keccak = ''
+	X11evo = ''
+	Blakecoin = ''
 }
 
 $Algorithms | Get-Member -MemberType NoteProperty | Select -ExpandProperty Name | ForEach {
@@ -42,6 +50,7 @@ $Algorithms | Get-Member -MemberType NoteProperty | Select -ExpandProperty Name 
 		Path = $Path
 		Arguments = -Join ('-b 127.0.0.1:',"$port",' -d ',$ThreadIndex,' -a ', $Algorithms.$_, ' -o stratum+tcp://$($Pools.', $_, '.Host):$($Pools.', $_, '.Port) -u $($Pools.', $_, '.User) -p $($Pools.', $_, '.Pass)', $Optimizations.$_)
 		HashRates = [PSCustomObject]@{$_ = -Join ('$($Stats.', $Name, '_', $_, '_HashRate.Week)')}
+		PowerUsages = [PSCustomObject]@{$_ = -Join ('$($Stats.', $Name, '_', $_, '_PowerUsage.Week)')}
 		API = 'Ccminer'
 		Port = $Port
 		Wrap = $false

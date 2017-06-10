@@ -10,7 +10,7 @@ $Algorithms = [PSCustomObject]@{
     #Decred = 'decred'
     #Pascal = 'pascal'
     Equihash = 'equihash'
-    Sia = 'sia'
+    #Sia = 'sia'
 }
 
 $Port = 3456+($ThreadIndex*10000)
@@ -34,6 +34,7 @@ $Algorithms | Get-Member -MemberType NoteProperty | Select -ExpandProperty Name 
         Path = $Path
         Arguments = -Join ('-p ', $Port, ' -c ', $_, $ThreadIndex, '.json')
         HashRates = [PSCustomObject]@{$_ = -Join ('$($Stats.', $Name, '_', $_, '_HashRate.Week)')}
+		PowerUsages = [PSCustomObject]@{$_ = -Join ('$($Stats.', $Name, '_', $_, '_PowerUsage.Week)')}
         API = 'NiceHash'
         Port = $Port
         Wrap = $false

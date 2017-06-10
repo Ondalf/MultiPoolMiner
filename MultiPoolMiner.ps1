@@ -50,7 +50,8 @@ $DecayBase = 1-0.1 #decimal percentage
 $ActiveMinerPrograms = @()
 
 #Start the log
-Start-Transcript ".\Logs\$(Get-Date -Format "yyyy-MM-dd_hh-mm-ss").txt"
+$TimeStamp = Get-Date -Format o | foreach {$_ -replace ":", "."}
+Start-Transcript ".\Logs\$TimeStamp.txt"
 
 #Update stats with missing data and set to today's date/time
 if(Test-Path "Stats"){Get-ChildItemContent "Stats" | ForEach {$Stat = Set-Stat $_.Name $_.Content.Week}}
@@ -146,6 +147,7 @@ while($true)
         $Miner = $_
 
         $Miner_HashRates = [PSCustomObject]@{}
+        $Miner_PowerUsages = [PSCustomObject]@{}
         $Miner_Pools = [PSCustomObject]@{}
         $Miner_Pools_Comparison = [PSCustomObject]@{}
         $Miner_Profits = [PSCustomObject]@{}
@@ -164,6 +166,12 @@ while($true)
             $Miner_Profits_Bias | Add-Member $_ ([Double]$Miner.HashRates.$_*$Pools.$_.Price*(1-($Pools.$_.MarginOfError*[Math]::Pow($DecayBase,$DecayExponent))))
         }
         
+        $Miner.PowerUsages.PSObject.Properties.Name | ForEach {
+            $Miner_PowerUsages | Add-Member $_ ([Double]$Miner.PowerUsages.$_)
+        }
+        
+        $Miner_PowerUsage = [Double]($Miner_PowerUsages.PSObject.Properties.Value | Measure -Sum).Sum
+        $Miner_PowerUsage_Comparsion = [Double]($Miner_PowerUsages.PSObject.Properties.Value | Measure -Sum).Sum
         $Miner_Profit = [Double]($Miner_Profits.PSObject.Properties.Value | Measure -Sum).Sum
         $Miner_Profit_Comparison = [Double]($Miner_Profits_Comparison.PSObject.Properties.Value | Measure -Sum).Sum
         $Miner_Profit_Bias = [Double]($Miner_Profits_Bias.PSObject.Properties.Value | Measure -Sum).Sum
@@ -177,6 +185,10 @@ while($true)
             $Miner_Profit_Comparison = $null
             $Miner_Profit_Bias = $null
         }
+        
+        $Miner.PowerUsages.PSObject.Properties | Where Value -EQ "" | Select -ExpandProperty Name | ForEach {
+            $Miner_PowerUsages.$_ = $null
+        }
 
         if($Miner_Types -eq $null){$Miner_Types = $Miners.Type | Select -Unique}
         if($Miner_Indexes -eq $null){$Miner_Indexes = $Miners.Index | Select -Unique}
@@ -185,8 +197,12 @@ while($true)
         if($Miner_Indexes -eq $null){$Miner_Indexes = 0}
         
         $Miner.HashRates = $Miner_HashRates
-
+        $Miner.PowerUsages = $Miner_PowerUsages
+        
         $Miner | Add-Member Pools $Miner_Pools
+        $Miner | Add-Member PowerUsage $Miner_PowerUsage
+        $Miner | Add-Member PowerUsage_Comparison $Miner_PowerUsage_Comparsion
+        $Miner | Add-Member PowerUsages_Comparison $Miner_PowerUsages_Comparsion
         $Miner | Add-Member Profits $Miner_Profits
         $Miner | Add-Member Profits_Comparison $Miner_Profits_Comparison
         $Miner | Add-Member Profits_Bias $Miner_Profits_Bias
@@ -231,6 +247,7 @@ while($true)
         {
             $ActiveMinerPrograms += [PSCustomObject]@{
                 Name = $_.Name
+                ApiDevice = $_.Type[1]
                 Path = $_.Path
                 Arguments = $_.Arguments
                 Wrap = $_.Wrap
@@ -243,6 +260,7 @@ while($true)
                 Activated = 0
                 Status = "Idle"
                 HashRate = 0
+                PowerUsage = 0
                 Benchmarked = 0
             }
         }
@@ -285,6 +303,7 @@ while($true)
         @{Label = "Miner"; Expression={$_.Name}}, 
         @{Label = "Algorithm"; Expression={$_.HashRates.PSObject.Properties.Name}}, 
         @{Label = "Speed"; Expression={$_.HashRates.PSObject.Properties.Value | ForEach {if($_ -ne $null){"$($_ | ConvertTo-Hash)/s"}else{"Benchmarking"}}}; Align='right'}, 
+        @{Label = "Watts"; Expression={$_.PowerUsages.PSObject.Properties.Value | ForEach {if($_ -ne $null){"$($_ | ConvertTo-Watts)"}else{"-"}}}; Align='right'}, 
         @{Label = "BTC/Day"; Expression={$_.Profits.PSObject.Properties.Value | ForEach {if($_ -ne $null){$_.ToString("N5")}else{"Benchmarking"}}}; Align='right'}, 
         @{Label = "BTC/GH/Day"; Expression={$_.Pools.PSObject.Properties.Value.Price | ForEach {($_*1000000000).ToString("N5")}}; Align='right'}, 
         @{Label = "Pool"; Expression={$_.Pools.PSObject.Properties.Value | ForEach {"$($_.Name)-$($_.Info)"}}}
@@ -293,6 +312,7 @@ while($true)
     #Display active miners list
     $ActiveMinerPrograms | Sort -Descending Status,{if($_.Process -eq $null){[DateTime]0}else{$_.Process.StartTime}} | Select -First (1+6+6) | Format-Table -Wrap -GroupBy Status (
         @{Label = "Speed"; Expression={$_.HashRate | ForEach {"$($_ | ConvertTo-Hash)/s"}}; Align='right'}, 
+        @{Label = "Watts"; Expression={$_.PowerUsage | ForEach {if($_ -ne $null){"$($_ | ConvertTo-Watts)"}else{"-"}}}; Align='right'}, 
         @{Label = "Active"; Expression={"{0:dd} Days {0:hh} Hours {0:mm} Minutes" -f $(if($_.Process -eq $null){$_.Active}else{if($_.Process.ExitTime -gt $_.Process.StartTime){($_.Active+($_.Process.ExitTime-$_.Process.StartTime))}else{($_.Active+((Get-Date)-$_.Process.StartTime))}})}}, 
         @{Label = "Launched"; Expression={Switch($_.Activated){0 {"Never"} 1 {"Once"} Default {"$_ Times"}}}}, 
         @{Label = "Command"; Expression={"$($_.Path.TrimStart((Convert-Path ".\"))) $($_.Arguments)"}}
@@ -301,21 +321,24 @@ while($true)
     #Display profit comparison
     if(($BestMiners_Combo | Where Profit -EQ $null | Measure).Count -eq 0)
     {
-        $MinerComparisons = 
-            [PSCustomObject]@{"Miner" = "MultiPoolMiner"}, 
-            [PSCustomObject]@{"Miner" = $BestMiners_Combo_Comparison | ForEach {"$($_.Name)-$($_.HashRates.PSObject.Properties.Name -join "/")"}}
-            
         $BestMiners_Combo_Stat = Set-Stat -Name "Profit" -Value ($BestMiners_Combo | Measure Profit -Sum).Sum
+        $BestMiners_Combo_PowerUsage = Set-Stat -Name "PowerUsage" -Value ($BestMiners_Combo | Measure PowerUsage -Sum).Sum
 
+        $MinerComparisons = 
+            [PSCustomObject]@{"Miner" = "MultiPoolMiner -- Live power: "+[String]($BestMiners_Combo_PowerUsage.Live|ConvertTo-Watts)+" -- Avg power: "+[String]($BestMiners_Combo_PowerUsage.Week|ConvertTo-Watts)}, 
+            [PSCustomObject]@{"Miner" = $BestMiners_Combo_Comparison | ForEach {"$($_.Name)-$($_.HashRates.PSObject.Properties.Name -join "/")"}},
+            [PSCustomObject]@{"Miner" = $BestMiners_Combo_Comparison | ForEach {"$($_.Name)-$($_.PowerUsages.PSObject.Properties.Value|ConvertTo-Watts -join "/")"}}
+            
         $MinerComparisons_Profit = 
             $BestMiners_Combo_Stat.Week, 
             ($BestMiners_Combo_Comparison | Measure Profit_Comparison -Sum).Sum
+            
 
         $Currency | Foreach {
             $MinerComparisons[0] | Add-Member $_ ("{0:N5}" -f ($MinerComparisons_Profit[0]*$Rates.$_))
             $MinerComparisons[1] | Add-Member $_ ("{0:N5}" -f ($MinerComparisons_Profit[1]*$Rates.$_))
         }
-
+        
         if($MinerComparisons_Profit[0] -gt $MinerComparisons_Profit[1])
         {
             Write-Host -BackgroundColor Yellow -ForegroundColor Black "MultiPoolMiner is $([Math]::Round((($MinerComparisons_Profit[0]-$MinerComparisons_Profit[1])/$MinerComparisons_Profit[1])*100))% more profitable: "
@@ -327,11 +350,13 @@ while($true)
     #Do nothing for a few seconds as to not overload the APIs
     Sleep $Interval
 
-    #Save current hash rates
+    #Save current hash rates and power usages
     $ActiveMinerPrograms | ForEach {
         $_.HashRate = 0
+        $_.PowerUsage = 0
         $Miner_HashRates = $null
-
+        $Miner_PowerUsages = $null
+        
         if($_.New){$_.Benchmarked++}
 
         if($_.Process -eq $null -or $_.Process.HasExited)
@@ -341,14 +366,25 @@ while($true)
         else
         {
             $Miner_HashRates = Get-HashRate $_.API $_.Port ($_.New -and $_.Benchmarked -lt 3)
-
+            $Miner_PowerUsages = Get-PowerUsage $_.API $_.Port $_.ApiDevice ($_.New -and $_.Benchmarked -lt 3)
+            
             $_.HashRate = $Miner_HashRates | Select -First $_.Algorithms.Count
+            $_.PowerUsage = $Miner_PowerUsages | Select -First $_.Algorithms.Count
             
             if($Miner_HashRates.Count -ge $_.Algorithms.Count)
             {
                 for($i = 0; $i -lt $_.Algorithms.Count; $i++)
                 {
                     $Stat = Set-Stat -Name "$($_.Name)_$($_.Algorithms | Select -Index $i)_HashRate" -Value ($Miner_HashRates | Select -Index $i)
+                }
+
+                $_.New = $false
+            }
+            if($Miner_PowerUsages.Count -ge $_.Algorithms.Count)
+            {
+                for($i = 0; $i -lt $_.Algorithms.Count; $i++)
+                {
+                    $Stat = Set-Stat -Name "$($_.Name)_$($_.Algorithms | Select -Index $i)_PowerUsage" -Value ($Miner_PowerUsages | Select -Index $i)
                 }
 
                 $_.New = $false

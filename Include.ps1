@@ -155,7 +155,7 @@ function Get-ChildItemContent {
     
     $ChildItems
 }
-
+<#
 function Set-Algorithm {
     param(
         [Parameter(Mandatory=$true)]
@@ -173,6 +173,94 @@ function Set-Algorithm {
         "nicehash"
         {
         }
+    }
+}
+#>
+function Get-PowerUsage {
+    param(
+        [Parameter(Mandatory=$true)]
+        [String]$API, 
+        [Parameter(Mandatory=$true)]
+        [Int]$Port,
+        [Parameter(Mandatory=$false)]
+        [Int]$ApiDevice,
+        [Parameter(Mandatory=$false)]
+        [Object]$Parameters = @{}, 
+        [Parameter(Mandatory=$false)]
+        [Bool]$Safe = $false
+    )
+    $Server = "localhost"
+    
+    $Multiplier = 1000
+    $Delta = 0.05
+    $Interval = 5
+    
+    $PowerUsage = @()
+    $PowerUsages = @()
+    
+    try
+    {
+        switch($API)
+        {
+            "ccminer"
+            {
+                $Message = "threads"
+                #Example to parse: GPU=0;BUS=6;CARD=GeForce GTX 1080;TEMP=79;POWER=245268;FAN=99;RPM=0;FREQ=1797000;KHS=714297.38;HWF=0;I=27.0;THR=134217728|
+                do
+                {
+                    $Client = New-Object System.Net.Sockets.TcpClient $server, $port
+                    $Writer = New-Object System.IO.StreamWriter $Client.GetStream()
+                    $Reader = New-Object System.IO.StreamReader $Client.GetStream()
+                    $Writer.AutoFlush = $true
+
+                    $Writer.WriteLine($Message)
+                    $Request = $Reader.ReadLine()
+
+                    $Data = $Request -split ";" | ConvertFrom-StringData
+
+                    $PowerUsage = if([Double]$Data.POWER -ne 0 -or [Double]$Data.KHS -ne 0){$Data.POWER}                    
+
+                    if($PowerUsage -eq $null){$PowerUsages = @(); break}
+                    
+                    $PowerUsages += [Double]$PowerUsage
+
+                    if(-not $Safe){break}
+
+                    sleep $Interval
+                } while($PowerUsages.Count -lt 6)
+            }
+            "nicehash"
+            {
+                $Message = @{id = 1;method = "device.get";params = @([String]$ApiDevice)} | ConvertTo-Json -Compress
+                $Client = New-Object System.Net.Sockets.TcpClient $server, $port
+                $Writer = New-Object System.IO.StreamWriter $Client.GetStream()
+                $Reader = New-Object System.IO.StreamReader $Client.GetStream()
+                $Writer.AutoFlush = $true
+
+                do
+                {
+                    $Writer.WriteLine($Message)
+                    $Request = $Reader.ReadLine()
+
+                    $Data = $Request | ConvertFrom-Json
+                    
+                    $PowerUsage = $Data.gpu_power_usage*$Multiplier
+
+                    if($PowerUsage -eq $null){$PowerUsages = @(); break}
+
+                    $PowerUsages += [Double]($PowerUsage | Measure -Sum).Sum
+
+                    if(-not $Safe){break}
+                } while($PowerUsage -eq 0)
+            }
+        }
+    
+        $PowerUsages_Info = $PowerUsages | Measure -Maximum -Minimum -Average
+        if($PowerUsages_Info.Maximum-$PowerUsages_Info.Minimum -le $PowerUsages_Info.Average*$Delta){$PowerUsages_Info.Maximum}
+    
+    }
+    catch
+    {
     }
 }
 
@@ -246,7 +334,8 @@ function Get-HashRate {
             "ccminer"
             {
                 $Message = "summary"
-
+                #Hashrate information fetch from API
+                #Example to parse: NAME=ccminer;VER=alexis-1.0;API=1.8;ALGO=skein;GPUS=1;KHS=714297.38;SOLV=0;ACC=138;REJ=0;ACCMN=2.660;DIFF=31151.144604;NETKHS=0;POOLS=1;WAIT=0;UPTIME=3113;TS=1496437918|
                 do
                 {
                     $Client = New-Object System.Net.Sockets.TcpClient $server, $port
@@ -259,7 +348,7 @@ function Get-HashRate {
 
                     $Data = $Request -split ";" | ConvertFrom-StringData
 
-                    $HashRate = if([Double]$Data.KHS -ne 0 -or [Double]$Data.ACC -ne 0){$Data.KHS}
+                    $HashRate = if([Double]$Data.KHS -ne 0 -or [Double]$Data.ACC -ne 0){$Data.KHS}                  
 
                     if($HashRate -eq $null){$HashRates = @(); break}
 
@@ -314,7 +403,7 @@ function Get-HashRate {
                     $Request = $Reader.ReadLine()
 
                     $Data = $Request | ConvertFrom-Json
-                
+                    
                     $HashRate = $Data.algorithms.workers.speed
 
                     if($HashRate -eq $null){$HashRates = @(); break}
@@ -416,7 +505,7 @@ function Get-HashRate {
 
         $HashRates_Info = $HashRates | Measure -Maximum -Minimum -Average
         if($HashRates_Info.Maximum-$HashRates_Info.Minimum -le $HashRates_Info.Average*$Delta){$HashRates_Info.Maximum}
-
+        
         $HashRates_Info_Dual = $HashRates_Dual | Measure -Maximum -Minimum -Average
         if($HashRates_Info_Dual.Maximum-$HashRates_Info_Dual.Minimum -le $HashRates_Info_Dual.Average*$Delta){$HashRates_Info_Dual.Maximum}
     }
@@ -435,6 +524,16 @@ filter ConvertTo-Hash {
         3 {"{0:n2} GH" -f ($Hash / [Math]::Pow(1000,3))}
         4 {"{0:n2} TH" -f ($Hash / [Math]::Pow(1000,4))}
         Default {"{0:n2} PH" -f ($Hash / [Math]::Pow(1000,5))}
+    }
+}
+
+filter ConvertTo-Watts { 
+    $Watts = $_
+    switch([math]::truncate([math]::log($Watts,[Math]::Pow(1000,1))))
+    {
+        0 {"{0:n2} mW" -f ($Watts / [Math]::Pow(1000,0))}
+        1 {"{0:n2} W" -f ($Watts / [Math]::Pow(1000,1))}
+        Default {"{0:n2} W" -f ($Watts / [Math]::Pow(1000,1))}
     }
 }
 
@@ -491,7 +590,7 @@ function Start-SubProcess {
 
         $ProcessParam = @{}
         $ProcessParam.Add("FilePath", $FilePath)
-		$ProcessParam.Add("WindowStyle", 'Minimized')
+        $ProcessParam.Add("WindowStyle", 'Minimized')
         if($ArgumentList -ne ""){$ProcessParam.Add("ArgumentList", $ArgumentList)}
         if($WorkingDirectory -ne ""){$ProcessParam.Add("WorkingDirectory", $WorkingDirectory)}
         $Process = Start-Process @ProcessParam -PassThru
@@ -542,10 +641,11 @@ function Get-Algorithm {
     
     $Algorithms = [PSCustomObject]@{
         lyra2re2 = "Lyra2RE2"
-        lyra2v2	= "Lyra2RE2"
+        lyra2v2 = "Lyra2RE2"
         myrgr = "MyriadGroestl"
         neoscrypt = "NeoScrypt"
         sha256 = "SHA256"
+        vanilla = "BlakeVanilla"
     }
 
     $Algorithm = (Get-Culture).TextInfo.ToTitleCase(($Algorithm -replace "-"," " -replace "_"," ")) -replace " "
